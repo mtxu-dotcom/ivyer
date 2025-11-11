@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>成語配對挑戰</title>
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Tone.js 用於背景音樂 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
+    <style>
+        /* 自定義字體 */
+        body {
+            font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+        }
+
+        /* 錯誤時的晃動動畫 */
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-10px); }
+            20%, 40%, 60%, 80% { transform: translateX(10px); }
+        }
+        .animate-shake {
+            animation: shake 0.5s ease-in-out;
+        }
+
+        /* 選中狀態 */
+        .selected {
+            background-color: #bfdbfe; /* bg-blue-200 */
+            border-color: #60a5fa; /* border-blue-400 */
+            box-shadow: 0 0 0 2px #93c5fd; /* ring-2 ring-blue-300 */
+        }
+        
+        /* 配對成功狀態 */
+        .matched {
+            background-color: #d1fae5; /* bg-green-100 */
+            border-color: #34d399; /* border-green-400 */
+            color: #065f46; /* text-green-800 */
+            cursor: not-allowed;
+            opacity: 0.7;
+        }
+        
+        /* 配對錯誤狀態 */
+        .wrong {
+            background-color: #fee2e2; /* bg-red-100 */
+            border-color: #f87171; /* border-red-400 */
+            animation: shake 0.5s ease-in-out;
+        }
+
+        /* 列表項目的基本樣式 */
+        .game-card {
+            padding: 1rem;
+            border: 2px solid #e5e7eb; /* border-gray-200 */
+            border-radius: 0.5rem; /* rounded-lg */
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            text-align: center;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .game-card:not(.matched):hover {
+            background-color: #f9fafb; /* hover:bg-gray-50 */
+            border-color: #9ca3af; /* hover:border-gray-400 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="container max-w-6xl w-full mx-auto bg-white rounded-xl shadow-2xl p-6 md:p-10">
+        
+        <h1 class="text-3xl md:text-4xl font-bold text-center text-blue-700 mb-4">
+            🧠 成語配對挑戰 🧠
+        </h1>
+        <p class="text-center text-gray-600 mb-6">
+            請點擊左邊的成語，再點擊右邊對應的解釋。
+        </p>
+
+        <!-- 遊戲區域 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-8">
+            <!-- 欄位一：成語 -->
+            <div class="border-4 border-blue-200 rounded-lg p-4">
+                <h2 class="text-xl font-semibold text-center text-blue-800 mb-4">成語</h2>
+                <ul id="idiom-list" class="space-y-3">
+                    <!-- 成語將由 JavaScript 動態載入 -->
+                </ul>
+            </div>
+
+            <!-- 欄位二：解釋 -->
+            <div class="border-4 border-green-200 rounded-lg p-4">
+                <h2 class="text-xl font-semibold text-center text-green-800 mb-4">解釋</h2>
+                <ul id="definition-list" class="space-y-3">
+                    <!-- 解釋將由 JavaScript 動態載入 -->
+                </ul>
+            </div>
+        </div>
+
+        <!-- 控制按鈕 -->
+        <div class="flex flex-col md:flex-row items-center justify-center gap-4 mt-8">
+            <button id="music-btn" class="w-full md:w-auto bg-purple-600 text-white font-medium py-3 px-6 rounded-lg shadow-md hover:bg-purple-700 transition-all duration-200">
+                🎵 播放/停止音樂
+            </button>
+            <button id="reset-btn" class="w-full md:w-auto bg-gray-500 text-white font-medium py-3 px-6 rounded-lg shadow-md hover:bg-gray-600 transition-all duration-200">
+                🔄 重新開始
+            </button>
+        </div>
+
+    </div>
+
+    <!-- 結果彈窗 (預設隱藏) -->
+    <div id="result-modal" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 hidden transition-opacity duration-300">
+        <div class="bg-white rounded-lg shadow-xl p-8 md:p-12 text-center transform scale-95 transition-transform duration-300">
+            <h2 class="text-4xl font-bold text-yellow-500 mb-4">🎉</h2>
+            <h3 class="text-2xl font-semibold text-gray-800 mb-4">恭喜！全部配對成功！</h3>
+            <p class="text-gray-600 mb-6">您已完成所有 15 個成語配對！</p>
+            <button id="close-modal-btn" class="bg-blue-600 text-white font-medium py-2 px-6 rounded-lg hover:bg-blue-700 transition-all">
+                太棒了！
+            </button>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+
+            // --- 1. 遊戲資料 ---
+            const gameData = [
+                { id: 1, idiom: "一目十行", definition: "形容閱讀速度十分快速。" },
+                { id: 2, idiom: "目不識丁", definition: "比喻不識字或毫無學問。" },
+                { id: 3, idiom: "耳目一新", definition: "形容所見所聞都有一種新奇、清新的感覺。" },
+                { id: 4, idiom: "目不轉睛", definition: "眼珠不轉地盯著看，形容注意力高度集中。" },
+                { id: 5, idiom: "眉開眼笑", definition: "形容愉悅欣喜的神情。" },
+                { id: 6, idiom: "目瞪口呆", definition: "形容受驚或受窘以致神情呆滯的樣子。" },
+                { id: 7, idiom: "目中無人", definition: "形容非常自大。" },
+                { id: 8, idiom: "賞心悅目", definition: "形容情景優美，使心情都感到快樂舒暢。" },
+                { id: 9, idiom: "口蜜腹劍", definition: "比喻一個人說得好聽，卻內心陰險，處處想陷害別人。" },
+                { id: 10, idiom: "異口同聲", definition: "不同的人說出同樣的話，形容人們的意見完全一致。" },
+                { id: 11, idiom: "禍從口出", definition: "比喻說錯了話要惹禍，強調言語必須謹慎。" },
+                { id: 12, idiom: "啞口無言", definition: "形容遭人質問或駁斥時沉默不語或無言以對。" },
+                { id: 13, idiom: "苦口婆心", definition: "形容以懇切真摯的態度，竭力勸告他人。" },
+                { id: 14, idiom: "心平氣和", definition: "形容心情平靜、態度溫和。" },
+                { id: 15, idiom: "心服口服", definition: "心裏和嘴上都信服，形容真心服氣或認輸。" }
+            ];
+
+            // --- 2. DOM 元素 ---
+            const idiomList = document.getElementById('idiom-list');
+            const definitionList = document.getElementById('definition-list');
+            const resetBtn = document.getElementById('reset-btn');
+            const musicBtn = document.getElementById('music-btn');
+            const resultModal = document.getElementById('result-modal');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+
+            // --- 3. 遊戲狀態 ---
+            let selectedIdiom = null;
+            let selectedDefinition = null;
+            let matchedCount = 0;
+            const totalPairs = gameData.length;
+
+            // --- 4. 洗牌演算法 (Fisher-Yates) ---
+            function shuffle(array) {
+                let currentIndex = array.length, randomIndex;
+                while (currentIndex != 0) {
+                    randomIndex = Math.floor(Math.random() * currentIndex);
+                    currentIndex--;
+                    [array[currentIndex], array[randomIndex]] = [
+                        array[randomIndex], array[currentIndex]];
+                }
+                return array;
+            }
+
+            // --- 5. 遊戲初始化 ---
+            function initGame() {
+                // 重置狀態
+                idiomList.innerHTML = '';
+                definitionList.innerHTML = '';
+                selectedIdiom = null;
+                selectedDefinition = null;
+                matchedCount = 0;
+                resultModal.classList.add('hidden');
+                resultModal.firstElementChild.classList.add('scale-95');
+
+                // 建立成語列表 (固定順序)
+                const idioms = [...gameData];
+                idioms.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = item.idiom;
+                    li.dataset.id = item.id;
+                    li.className = 'game-card';
+                    li.addEventListener('click', onIdiomClick);
+                    idiomList.appendChild(li);
+                });
+
+                // 建立解釋列表 (隨機順序)
+                const definitions = shuffle([...gameData]);
+                definitions.forEach(item => {
+                    const li = document.createElement('li');
+                    li.textContent = item.definition;
+                    li.dataset.id = item.id;
+                    li.className = 'game-card';
+                    li.addEventListener('click', onDefinitionClick);
+                    definitionList.appendChild(li);
+                });
+            }
+
+            // --- 6. 點擊事件處理 ---
+            function onIdiomClick(e) {
+                const clickedCard = e.target;
+                if (clickedCard.classList.contains('matched')) return;
+
+                // 如果已經選了一個，先取消
+                if (selectedIdiom) {
+                    selectedIdiom.classList.remove('selected');
+                }
+                
+                // 如果點擊的是同一個，則取消選取
+                if (selectedIdiom === clickedCard) {
+                    selectedIdiom = null;
+                } else {
+                    clickedCard.classList.add('selected');
+                    selectedIdiom = clickedCard;
+                }
+                
+                checkMatch();
+            }
+
+            function onDefinitionClick(e) {
+                const clickedCard = e.target;
+                if (clickedCard.classList.contains('matched')) return;
+
+                if (selectedDefinition) {
+                    selectedDefinition.classList.remove('selected');
+                }
+                
+                if (selectedDefinition === clickedCard) {
+                    selectedDefinition = null;
+                } else {
+                    clickedCard.classList.add('selected');
+                    selectedDefinition = clickedCard;
+                }
+
+                checkMatch();
+            }
+
+            // --- 7. 檢查配對 ---
+            function checkMatch() {
+                if (!selectedIdiom || !selectedDefinition) return;
+
+                const idiomId = selectedIdiom.dataset.id;
+                const definitionId = selectedDefinition.dataset.id;
+
+                if (idiomId === definitionId) {
+                    // --- 配對成功 ---
+                    selectedIdiom.classList.remove('selected');
+                    selectedDefinition.classList.remove('selected');
+                    
+                    selectedIdiom.classList.add('matched');
+                    selectedDefinition.classList.add('matched');
+
+                    // 移除事件監聽器
+                    selectedIdiom.removeEventListener('click', onIdiomClick);
+                    selectedDefinition.removeEventListener('click', onDefinitionClick);
+
+                    selectedIdiom = null;
+                    selectedDefinition = null;
+                    matchedCount++;
+
+                    // 檢查是否遊戲結束
+                    if (matchedCount === totalPairs) {
+                        setTimeout(showWinModal, 500);
+                    }
+
+                } else {
+                    // --- 配對錯誤 ---
+                    const tempIdiom = selectedIdiom;
+                    const tempDefinition = selectedDefinition;
+
+                    tempIdiom.classList.add('wrong');
+                    tempDefinition.classList.add('wrong');
+                    
+                    selectedIdiom = null;
+                    selectedDefinition = null;
+
+                    setTimeout(() => {
+                        tempIdiom.classList.remove('wrong');
+                        tempDefinition.classList.remove('wrong');
+                        tempIdiom.classList.remove('selected');
+                        tempDefinition.classList.remove('selected');
+                    }, 800);
+                }
+            }
+
+            // --- 8. 顯示勝利彈窗 ---
+            function showWinModal() {
+                resultModal.classList.remove('hidden');
+                setTimeout(() => {
+                    resultModal.firstElementChild.classList.remove('scale-95');
+                }, 10); // 延遲一點以觸發 transition
+            }
+
+            // --- 9. 背景音樂 ---
+            let musicPlaying = false;
+            const synth = new Tone.PolySynth(Tone.Synth, {
+                oscillator: { type: "triangle" },
+                envelope: { attack: 0.02, decay: 0.1, sustain: 0.3, release: 1 }
+            }).toDestination();
+            
+            const reverb = new Tone.Reverb(1.5).toDestination();
+            synth.connect(reverb);
+
+            const notes = ["C4", "E4", "G4", "A4", "C5", "A4", "G4", "E4"];
+            let noteIndex = 0;
+            
+            const musicLoop = new Tone.Loop(time => {
+                const note = notes[noteIndex % notes.length];
+                synth.triggerAttackRelease(note, "8n", time);
+                noteIndex++;
+            }, "4n"); // 每 4 分音符播放一次
+
+            musicBtn.addEventListener('click', async () => {
+                await Tone.start();
+                if (musicPlaying) {
+                    Tone.Transport.stop();
+                    musicLoop.stop();
+                    musicPlaying = false;
+                    musicBtn.classList.remove('bg-red-500', 'hover:bg-red-600');
+                    musicBtn.classList.add('bg-purple-600', 'hover:bg-purple-700');
+                } else {
+                    Tone.Transport.start();
+                    musicLoop.start(0);
+                    musicPlaying = true;
+                    musicBtn.classList.remove('bg-purple-600', 'hover:bg-purple-700');
+                    musicBtn.classList.add('bg-red-500', 'hover:bg-red-600');
+                }
+            });
+
+            // --- 10. 事件綁定 ---
+            resetBtn.addEventListener('click', initGame);
+            closeModalBtn.addEventListener('click', () => {
+                resultModal.classList.add('hidden');
+                resultModal.firstElementChild.classList.add('scale-95');
+                // 也可以在這裡自動重置遊戲
+                initGame();
+            });
+
+            // --- 11. 啟動遊戲 ---
+            initGame();
+
+        });
+    </script>
+</body>
+</html>
